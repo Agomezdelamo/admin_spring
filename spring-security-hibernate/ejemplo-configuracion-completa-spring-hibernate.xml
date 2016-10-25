@@ -1,0 +1,318 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+	xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:jee="http://www.springframework.org/schema/jee"
+	xsi:schemaLocation="
+		http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context.xsd
+		http://www.springframework.org/schema/jee http://www.springframework.org/schema/jee/spring-jee.xsd"
+	default-autowire="byName">
+
+
+	<!-- COMPONENT SCAN CON XML, SCANEA LAS ANOTACIONES SPRING POR TODOS LOS SITIOS QUE TU LE DIGAS -->
+	<context:component-scan base-package="com.cystelcom.attcr.notifications" />
+	<context:component-scan base-package="com.cystelcom.attcr.common.restservices" />
+	<context:component-scan base-package="com.cystelcom.attcr.common.services" />
+	<context:component-scan base-package="com.cystelcom.attcr.dao" />
+	<context:component-scan base-package="com.cystelcom.attcr.portalweb.services" />
+	<context:component-scan base-package="com.cystelcom.attcr.portalweb.notification" />
+	<context:component-scan	base-package="com.cystelcom.attcr.portalweb.qualcomm.clients" />
+	<context:component-scan base-package="com.cystelcom.attcr.portalweb.webservices" />
+	<context:component-scan base-package="com.cystelcom.weightcontrol.services"/>	
+	<context:component-scan base-package="com.cystelcom.portalweb.newsletter.services"/>
+	<context:component-scan base-package="com.cystelcom.attcr.common.utils"/>
+	
+	<!--COMPONENT SCAN CON ANOTACIONES SERIA:
+
+	1. Arrancas la aplicación istanciando el contexto aplicación de la configuración de anotaciones,
+	y metiendo como parámetro la clase en la que tienes la configuración.
+	
+	new AnnotationConfigApplicationContext(MyRootConfigurationClass.class);
+	
+	2. la clase en la que tienes la configuración debe escanear todas las anotaciones spring, 
+	ejemplo 1 scan paket:
+		@Configuration
+		@ComponentScan("com.my.package")
+		public class MyRootConfigurationClass
+	ejemplo varios scan paket:
+		@ComponentScan({"com.my.package.first","com.my.package.second"})
+	-->
+	
+	<!-- OTRA FORMA DE AÑADIR EL DATA SOURCE, EN ESTE CASO BUSCA ESE NAME DE JDBC EN EL SERVER.XML DE TOMCAT -->
+	<jee:jndi-lookup id="dataSource" jndi-name="jdbc/ATTCRONICOS" />
+	<jee:jndi-lookup id="statsDataSource" jndi-name="jdbc/MHA_STATS" />
+	
+	<!-- CONFIGURACION DEL SESSIÓN FACTORY EN XML -->
+	<bean id="sessionFactory"
+		class="org.springframework.orm.hibernate4.LocalSessionFactoryBean">
+		<property name="dataSource" ref="dataSource" />
+
+		<property name="mappingLocations">
+			<list>
+				<value>classpath*:com/cystelcom/attcr/dao/mapping/*.hbm.xml</value>
+				<value>classpath*:com/cystelcom/attcr/dao/mapping/weightcontrol/*.hbm.xml</value>
+				<value>classpath*:com/cystelcom/attcr/dao/mapping/web/minimal/*.hbm.xml
+				</value>
+			</list>
+		</property>
+		<property name="hibernateProperties">
+			<value>
+				hibernate.format_sql=true
+				hibernate.hbm2ddl.auto=validate
+				hibernate.connection.isolation=1
+				cache.provider_class=org.hibernate.cache.NoCacheProvider
+				hibernate.show_sql=false
+				jadira.usertype.autoRegisterUserTypes=true
+				<!-- hibernate.jdbc.fetch_size=100 -->
+				<!-- hibernate.jdbc.batch_size=20 -->
+			</value>
+		</property>
+	</bean>
+
+	
+	<!-- GESTOR DE TRANSACCIONES DE LA BD DE CONFIGURACIÓN -->
+<!-- Spring proporciona una serie de gestores para administrar las transacciones por nosotros, 
+	 en este caso nos centramos en el gestor de transacciones de hibernate, 
+	 que se va a ocupar de gestionar instancias org.hibernate.Transaction, 
+	 el gestor se ocupará de iniciar la transacción, comitir los cambios si todo ha ido bien, 
+	 o deshacerlos en caso de ocurrir alguna incidencia. -->
+
+<!-- Spring puede configurar un gestor de transacciones de un modo declarativo, 
+	 mediante anotaciones o programaticamente. -->
+
+<!-- 1. EJEMPLO DE Configuración declarativa -->
+<!-- La configuración del gestor de transacciones de un modo declarativo se 
+	 apoya en la programación orientada en aspectos(AOP), ya que este va a interceptar
+	 los posibles métodos que van a estar bajo una transacción. Comenzamos declarando 
+	 los espacios de nombres de configuración de Spring necesarios. 
+	 
+	EN EL SPRING-DATA.XML
+	declaramos los espacios de nombres necesarios para xsi, context, aop y transaction (tx)
+	<beans xmlns="http://www.springframework.org/schema/beans"
+	    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	    xmlns:context="http://www.springframework.org/schema/context"
+	    xmlns:aop="http://www.springframework.org/schema/aop"
+	    xmlns:tx="http://www.springframework.org/schema/tx"
+	    xsi:schemaLocation="http://www.springframework.org/schema/beans
+	    http://www.springframework.org/schema/beans/spring-beans.xsd
+	    http://www.springframework.org/schema/context
+	    http://www.springframework.org/schema/context/spring-context-4.0.xsd
+	    http://www.springframework.org/schema/aop
+	    http://www.springframework.org/schema/aop/spring-aop-4.0.xsd
+	    http://www.springframework.org/schema/tx
+	    http://www.springframework.org/schema/tx/spring-tx-4.0.xsd">
+	**************************************************************************************************   
+	****1.1 Gracias a la etiquetas <tx:advice ..>..</tx:advice> **************************************
+	****vamos definir el tipo de la transacción y sobre que métodos. *********************************
+	**************************************************************************************************
+		<tx:advice id="txAlojamientoDAO" transaction-manager="transactionManager">
+	        <tx:attributes>
+	            <tx:method name="find*" propagation="REQUIRED" read-only="true"/>
+	            <tx:method name="actualizar*" propagation="REQUIRES_NEW" read-only="false" rollback-for="java.lang.Throwable.class"/>
+	        </tx:attributes>
+	    </tx:advice>
+	**************************************************************************************************   
+	****1.2 Posteriormente definimos un aspecto <aop:config>..</aop:config> **************************
+	**** que lo que hará es interceptar lo métodos especificados para luego **************************
+	**** con ayuda de tx:advice ejecutar el método bajo una transacción ******************************
+		<aop:config>
+	   		<aop:pointcut expression="execution(* com.javierferrandiz.hibernate.dao.AlojamientoDAO.*(..))" id="corte-alojamiento"/>
+	        <aop:advisor pointcut-ref="corte-alojamiento" advice-ref="txAlojamientoDAO">
+	    </aop:config>
+	
+	
+	    <bean id="transactionManager" class="org.springframework.orm.hibernate4.HibernateTransactionManager">
+	        <property name="sessionFactory" ref="sessionFactory"></property>
+	    </bean>
+	</beans>
+-->
+
+
+<!-- 2. EJEMPLO DE Configuración PROGRAMATICA -->	
+<!-- DELEGAMOS A HIBERNATE TODA LA TRANSACCION Y NOS DESPREOCUPAMOS, LO MALO ES QUE PERDEMOS CONTROL -->
+<!-- 	2.1 TransactionManager, declaramos un bean manager de la transacción con un session factory seteado -->
+	<bean id="transactionManager"
+		class="org.springframework.orm.hibernate4.HibernateTransactionManager">
+		<property name="sessionFactory" ref="sessionFactory" />
+	</bean>
+
+<!-- 	2.2 Declaramos un interceptor para todas las clases que acceden a db, transactionAttributeSource -->
+<!-- 	 referencia a un bean con el listado de métodos mediante expresión regular que acceden a db. -->
+	<!-- listado de nombre de métodos de todas las clases que acceden a db. -->
+	<bean id="methodTxInterceptor"
+		class="org.springframework.transaction.interceptor.TransactionInterceptor">
+		<property name="transactionManager" ref="transactionManager" />
+		<property name="transactionAttributeSource" ref="myNameMatchTransactionAttributeSource" />
+	</bean>
+	
+<!-- 	2.3 el mapa mediante expresión regular, con sus especificaciones según se llame el método. -->
+	<bean id="myNameMatchTransactionAttributeSource"
+		class="org.springframework.transaction.interceptor.NameMatchTransactionAttributeSource">
+		<property name="nameMap">
+			<props>
+				<prop key="loadUserByUsername">PROPAGATION_REQUIRES_NEW,ISOLATION_READ_COMMITTED</prop>
+				<prop key="get*">PROPAGATION_REQUIRED,ISOLATION_READ_UNCOMMITTED,readOnly</prop>
+				<prop key="find*">PROPAGATION_REQUIRED,ISOLATION_READ_UNCOMMITTED,readOnly</prop>
+				<prop key="*">PROPAGATION_REQUIRED,ISOLATION_READ_COMMITTED</prop>
+			</props>
+		</property>
+	</bean>
+
+	<!-- 2.4 Configuración del proxy de hibernate: 
+		a) contiene una lista de las clases que contienen métodos que accederán a BD (beanNames). 
+		b) tiene una lista de interceptores, que se ejecutan cada vez que una de esas clases accede a db. "methodTxInterceptor" -->
+	<bean id="autoProxyCreator"
+		class="org.springframework.aop.framework.autoproxy.BeanNameAutoProxyCreator">
+		<property name="interceptorNames">
+			<list>
+				<idref bean="methodTxInterceptor" />
+			</list>
+		</property>
+
+		<property name="beanNames">
+			<list>
+				<!-- Del paquete de servicios del Portal Web -->
+
+				<idref bean="accountService" />
+				<idref bean="alertHistoryService" />
+				<idref bean="alertService" />
+				<idref bean="alertTypeService" />
+				<idref bean="applicationPropertiesService" />
+				<idref bean="applicationTypeService" />
+				<idref bean="appTypeAuthenticationService" />
+				<idref bean="careGroupService" />
+				<idref bean="commentService"/>
+				<idref bean="contentGroupService" />
+				<idref bean="contentService" />
+				<idref bean="controlService" />
+				<idref bean="deviceMetricUnitService" />
+				<idref bean="deviceService" />
+				<idref bean="doctorCareGroupHistoryService" />
+				<idref bean="doctorCareGroupService" />
+				<idref bean="doctorService" />
+				<idref bean="drugService" />
+				<idref bean="drugsTakenService" />
+				<idref bean="facebookAuthenticationService" />
+				<idref bean="failedEcaraRequestService" />
+				<idref bean="favoriteUserContentGroupService" />
+				<idref bean="favoriteUserForumService" />
+				<idref bean="forumService" />
+				<idref bean="forumThemeService" />
+				<idref bean="historicalPatientDeviceService"/>
+				<idref bean="historicDrugService" />
+				<idref bean="historicUserService" />
+				<idref bean="historicUserLoginService" />
+				<idref bean="historicUserProgramService" />
+				<idref bean="historicProgramExecutionService" />
+				<idref bean="historicTestResultService" />
+				<idref bean="homePageService" />
+				<idref bean="hubDeviceService" />
+				<idref bean="hubService" />
+				<idref bean="loginAnswersAuthenticationService" />
+				<idref bean="loginService" />
+				<idref bean="measurementService" />
+				<idref bean="measureHistoryService" />
+				<idref bean="measurementDetailService" />
+				<idref bean="medicalParamService" />
+				<idref bean="messageService" />
+				<idref bean="motivationalBroadcastMessageReceiverService" />
+				<idref bean="motivationalBroadcastMessageService" />
+				<idref bean="nfcAuthenticationService" />
+				<idref bean="nfcInfoService"/>
+				<idref bean="oauthTransactionTemporaryPropertiesService" />
+				<idref bean="oopsHistoryService" />
+				<idref bean="organizationalUnitService" />
+				<idref bean="patientMedicalParamService" />
+				<idref bean="patientService" />
+				<idref bean="pointService" />
+				<idref bean="pointsMapService" />
+				<idref bean="programPatientService" />
+				<idref bean="programService" />
+				<idref bean="pushAlertPcService" />
+				<idref bean="pushMeasureService" />
+				<idref bean="qualcommLifeService" />
+				<idref bean="roleService" />
+				<idref bean="reminderService" />
+				<idref bean="reminderTypeService" />
+				<idref bean="shareRequestService" />
+				<idref bean="shareService" />
+				<idref bean="signUpService" />
+				<idref bean="subscriptionService" />
+				<idref bean="subscriptionItemService" />
+				<idref bean="billingOperationsRestServiceClient" />
+				<idref bean="supervisorCareGroupHistoryService" />
+				<idref bean="systemConfigurationService" />
+				<idref bean="testService" />
+				<idref bean="thresholdService" />
+				<idref bean="userProfileService" />
+				<idref bean="unitService" />
+				<idref bean="userService" />
+				<idref bean="walgreensPropertiesService" />
+				<idref bean="wellnessMessageService" />
+				<idref bean="wellnessMessageReceiverService" />
+				<idref bean="fitBaseService"/>
+				<idref bean="facebookRestServiceClient" />
+				<idref bean="facebookService" />
+				<idref bean="facebookAuthenticationService" />
+		
+				<!-- Otros -->
+				<idref bean="actionTakenCacheTransaccionalService" />
+				<idref bean="administrationNodeCacheTransaccionalService" />
+				<idref bean="blockedCauseCacheTransaccionalService" />
+				<idref bean="commonMeasureService" />
+				<idref bean="commonDrugsTakenService" />
+				<idref bean="categorizationCacheTransaccionalService" />
+				<idref bean="countryCacheTransaccionalService" />
+				<idref bean="drugUnitCacheTransaccionalService" />
+				<idref bean="drugTypeCacheTransaccionalService" />
+				<idref bean="additionalDataCacheTransaccionalService" />
+				<idref bean="deviceCacheTransaccionalService" />
+				<idref bean="fitBaseMuscleAreaCacheTransactionalService" />
+				<idref bean="hubDeviceStateCacheTransaccionalService" />
+				<idref bean="hubStateCacheTransaccionalService" />
+				<idref bean="languageCacheTransaccionalService" />
+				<idref bean="loginQuestionCacheTransaccionalService" />
+				<idref bean="periodTypeCacheTransaccionalService" />
+				<idref bean="qrKeyManagerService" />
+				<idref bean="regionCacheTransaccionalService" />
+				<idref bean="worldZoneCacheTransaccionalService" />
+				<idref bean="rolesCacheTransaccionalService" />
+				<idref bean="presenceService" />
+				<idref bean="systemConfigurationCacheTransaccionalService" />
+				<idref bean="timeZoneCacheTransaccionalService" />
+				<idref bean="webResourceCacheTransaccionalService" />
+				<idref bean="visibilityPermissionsService" />
+				<idref bean="deviceAccountMobileAppCacheTransaccionalService" />
+				
+			</list>
+		</property>
+	</bean>
+	
+<!-- 	ESTO ES LO MISMO QUE LO ANTERIOR PERO ORIENTADO A UN SERVICIO DE CACHE -->
+	<bean id="cacheReadInterceptor"
+		class="com.cystelcom.attcr.presence_control.cache.CacheReadInterceptor">
+		<property name="advisedMethods">
+			<list>
+				<value>find</value>
+				<value>is</value>
+			</list>
+		</property>
+	</bean>
+
+	<bean id="cacheAutoProxyCreator"
+		class="org.springframework.aop.framework.autoproxy.BeanNameAutoProxyCreator">
+		<property name="interceptorNames">
+			<list>
+				<idref bean="cacheReadInterceptor" />
+			</list>
+		</property>
+		<property name="beanNames">
+			<list>
+				<idref bean="generalCacheService" />
+			</list>
+		</property>
+	</bean>
+
+</beans>
